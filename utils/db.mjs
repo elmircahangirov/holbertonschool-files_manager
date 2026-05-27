@@ -9,38 +9,63 @@ class DBClient {
     const database = process.env.DB_DATABASE || 'files_manager';
 
     this.connected = false;
-    this.client = new MongoClient(`mongodb://${host}:${port}`);
-    this.db = null;
+    this.database = database;
+    this.uri = `mongodb://${host}:${port}`;
+    this.client = null;
+    this.ready = this.connect();
+  }
 
-    this.client.connect()
-      .then(() => {
-        this.db = this.client.db(database);
-        this.connected = true;
-      })
-      .catch((error) => {
-        this.connected = false;
-        console.log(`MongoDB client error: ${error}`);
-      });
+  async connect() {
+    try {
+      if (typeof MongoClient.connect === 'function') {
+        this.client = await MongoClient.connect(this.uri, {
+          useNewUrlParser: true,
+          useUnifiedTopology: true,
+          connectTimeoutMS: 2000,
+          serverSelectionTimeoutMS: 2000,
+        });
+      } else {
+        this.client = new MongoClient(this.uri);
+        if (typeof this.client.connect === 'function') {
+          await this.client.connect();
+        }
+      }
 
-    this.client.on('close', () => {
-      this.connected = false;
-    });
-    this.client.on('error', (error) => {
+      this.connected = true;
+
+      if (typeof this.client.on === 'function') {
+        this.client.on('close', () => {
+          this.connected = false;
+        });
+
+        this.client.on('error', (error) => {
+          this.connected = false;
+          console.log(`MongoDB client error: ${error}`);
+        });
+      }
+    } catch (error) {
       this.connected = false;
       console.log(`MongoDB client error: ${error}`);
-    });
+    }
   }
 
   isAlive() {
     return this.connected;
   }
 
+  async getDb() {
+    await this.ready;
+    return this.client.db(this.database);
+  }
+
   async nbUsers() {
-    return this.db.collection('users').countDocuments();
+    const db = await this.getDb();
+    return db.collection('users').countDocuments();
   }
 
   async nbFiles() {
-    return this.db.collection('files').countDocuments();
+    const db = await this.getDb();
+    return db.collection('files').countDocuments();
   }
 }
 
